@@ -1,0 +1,77 @@
+#cloud-config
+
+wait-on-network:
+  ipv4: true
+
+# Создание групп
+groups:
+  - docker
+
+# Добавление стандартного пользователя и SSH ключей
+disable_root: false
+users:
+  - default
+  - name: linux
+    ssh-authorized-keys:
+      - your-ssh-key
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: sudo, docker
+    shell: /bin/bash
+  - name: root
+    ssh_authorized_keys:
+      - your-ssh-key
+
+# Обновление системы
+package_update: true
+package_upgrade: true
+
+# Установка дополнительного ПО
+packages:
+  - curl
+  - fail2ban
+  - htop
+  - iotop
+  - mc
+  - openntpd
+  - openssh-server
+  - software-properties-common
+  - tzdata
+  - ncdu
+
+# Настройка OpenSSH
+write_files:
+  - path: /etc/ssh/sshd_config
+    owner: root:root
+    permissions: '0644'
+    content: |
+      Include /etc/ssh/sshd_config.d/*.conf
+      Port 22
+      Protocol 2
+
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      ChallengeResponseAuthentication no
+      UsePAM yes
+      PrintMotd no
+      AcceptEnv LANG LC_*
+
+      Subsystem	sftp	/usr/lib/openssh/sftp-server
+
+# Перезагрузка для обновления ядра
+package_reboot_if_required: true
+
+runcmd:
+  # Отключение swap
+  - swapoff --all
+  - sed -ri '/\sswap\s/s/^#?/#/' /etc/fstab
+  # Установка Docker
+  - curl -sSL https://get.docker.com/ | sh
+  # Очистка системы
+  - apt-get purge $(dpkg -l 'linux-*' | sed '/^ii/!d;/'"$(uname -r | sed "s/\(.*\)-\([^0-9]\+\)/\1/")"'/d;s/^[^ ]* [^ ]* \([^ ]*\).*/\1/;/[0-9]/!d' | head -n -1)
+  - dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
+  - apt-get autoclean
+  - apt-get autoremove
+
+power_state:
+  mode: reboot
+  message: Restarting after installing and clean
